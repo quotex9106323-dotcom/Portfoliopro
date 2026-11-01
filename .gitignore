@@ -1,8 +1,37 @@
+# Dependencies
 node_modules/
+PortfolioPro/frontend/node_modules/
+
+# Build & Compiler Outputs
 build/
 dist/
+server.js
 coverage/
+.vercel/
+PortfolioPro/backend/target/
+PortfolioPro/frontend/dist/
+PortfolioPro/frontend/.angular/
+
+# Runtime & Local Artifacts
+data/
+.deliverables/
+docs/
+public/assets/aistudio/
+*.pdf
+*.zip
+setup.ps1
+setup.sh
+deploy-github-vercel.ps1
+deploy-github-vercel.sh
+public/setup.ps1
+public/setup.sh
+public/deploy-github-vercel.ps1
+public/deploy-github-vercel.sh
 .DS_Store
 *.log
+.aistudio/
+
+# Environment Secrets
 .env*
 !.env.example
+!PortfolioPro/.env.example

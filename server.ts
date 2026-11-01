@@ -1064,73 +1064,32 @@ async function startServer() {
     res.json({ success: true, data: { readAll: true } });
   });
 
-  // ==========================
-  // PROJECT ZIP & SCRIPT DOWNLOAD ROUTES
-  // ==========================
-  const sendProjectZip = (_req: Request, res: Response) => {
-    const candidates = [
-      path.resolve(process.cwd(), 'public', 'PortfolioPro.zip'),
-      path.resolve(process.cwd(), 'PortfolioPro.zip'),
-    ];
-    const found = candidates.find((p) => fs.existsSync(p));
-    if (!found) {
-      res.status(404).json({ success: false, message: 'PortfolioPro.zip archive not yet generated.' });
+  // Optional local export archive handler (ignored in production / Vercel builds)
+  app.get('/export/:filename', (req: Request, res: Response) => {
+    const safeName = path.basename(String(req.params.filename || ''));
+    if (!safeName) {
+      res.status(404).end();
       return;
     }
-    const stat = fs.statSync(found);
-    res.setHeader('Content-Type', 'application/zip');
+    const candidate = path.resolve(process.cwd(), '.deliverables', safeName);
+    if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) {
+      res.status(404).end();
+      return;
+    }
+    const ext = path.extname(safeName).toLowerCase();
+    const mime =
+      ext === '.zip'
+        ? 'application/zip'
+        : ext === '.pdf'
+          ? 'application/pdf'
+          : 'text/plain; charset=utf-8';
+    const stat = fs.statSync(candidate);
+    res.setHeader('Content-Type', mime);
     res.setHeader('Content-Length', String(stat.size));
-    res.setHeader('Content-Disposition', 'attachment; filename="PortfolioPro.zip"');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
     res.setHeader('Cache-Control', 'no-store');
-    fs.createReadStream(found).pipe(res);
-  };
-
-  const sendScriptFile = (filename: 'setup.sh' | 'setup.ps1') => (_req: Request, res: Response) => {
-    const candidates = [
-      path.resolve(process.cwd(), 'public', filename),
-      path.resolve(process.cwd(), filename),
-    ];
-    const found = candidates.find((p) => fs.existsSync(p));
-    if (!found) {
-      res.status(404).send(`# ${filename} not found`);
-      return;
-    }
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.sendFile(found);
-  };
-
-  const sendPdfDocument = (pdfFilename: string) => (_req: Request, res: Response) => {
-    const candidates = [
-      path.resolve(process.cwd(), 'public', pdfFilename),
-      path.resolve(process.cwd(), pdfFilename),
-    ];
-    const found = candidates.find((p) => fs.existsSync(p));
-    if (!found) {
-      res.status(404).json({ success: false, message: `${pdfFilename} not found.` });
-      return;
-    }
-    const stat = fs.statSync(found);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Length', String(stat.size));
-    res.setHeader('Content-Disposition', `attachment; filename="${pdfFilename}"`);
-    res.setHeader('Cache-Control', 'no-store');
-    fs.createReadStream(found).pipe(res);
-  };
-
-  const synopsisPdf = 'Project_Synopsis_ManishKumarSingh_2300320150035.pdf';
-  const codeOutputPdf = 'PortfolioPro_Complete_Code_Output_Manish_Kumar_Singh_2300320150035.pdf';
-
-  app.get('/api/download/synopsis-pdf', sendPdfDocument(synopsisPdf));
-  app.get(`/${synopsisPdf}`, sendPdfDocument(synopsisPdf));
-  app.get('/api/download/code-output-pdf', sendPdfDocument(codeOutputPdf));
-  app.get(`/${codeOutputPdf}`, sendPdfDocument(codeOutputPdf));
-  app.get('/api/download/submission-pdf', sendPdfDocument(synopsisPdf));
-  app.get('/001_Creative_Prompt_Crafting_PortfolioPro.pdf', sendPdfDocument('001_Creative_Prompt_Crafting_PortfolioPro.pdf'));
-  app.get('/api/download/project-zip', sendProjectZip);
-  app.get('/PortfolioPro.zip', sendProjectZip);
-  app.get('/api/download/setup-sh', sendScriptFile('setup.sh'));
-  app.get('/api/download/setup-ps1', sendScriptFile('setup.ps1'));
+    fs.createReadStream(candidate).pipe(res);
+  });
 
   // ==========================
   // VITE DEV / PROD STATIC SERVING

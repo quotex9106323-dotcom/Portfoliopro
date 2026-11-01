@@ -20,8 +20,6 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  Download,
-  FileText,
   Undo2,
   X,
 } from 'lucide-react';
@@ -39,10 +37,6 @@ import { AnalysisView } from './views/AnalysisView';
 import { RiskView } from './views/RiskView';
 import { WalletView } from './views/WalletView';
 import { apiFetch } from './services/api';
-import {
-  ProjectDownloadModal,
-  triggerZipBlobDownload,
-} from './components/ProjectDownloadModal';
 import type { PageRoute } from './types';
 
 const SIDEBAR_ITEMS: Array<{ route: PageRoute; label: string; icon: React.ReactNode }> = [
@@ -79,16 +73,6 @@ function WorkspaceShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [zipModalOpen, setZipModalOpen] = useState(false);
-
-  const openPdfDownload = () => {
-    setZipModalOpen(true);
-  };
-
-  const openZipDownload = () => {
-    void triggerZipBlobDownload();
-    setZipModalOpen(true);
-  };
 
   if (authLoading) {
     return (
@@ -169,24 +153,15 @@ function WorkspaceShell() {
           </nav>
         </div>
 
-        <div className="p-3 border-t border-slate-200 dark:border-slate-800 space-y-1.5">
+        <div className="p-3 border-t border-slate-200 dark:border-slate-800">
           <button
             type="button"
-            onClick={openPdfDownload}
-            title="Download HCLTech Synopsis & Code Output PDFs"
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            onClick={logout}
+            title={collapsed ? 'Sign Out' : undefined}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/70 hover:text-rose-600 dark:hover:text-rose-400 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <FileText className="w-3.5 h-3.5 shrink-0" />
-            {!collapsed && <span>Submission PDFs</span>}
-          </button>
-          <button
-            type="button"
-            onClick={openZipDownload}
-            title="Download Complete Spring Boot + Angular Project ZIP"
-            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 shrink-0" />
-            {!collapsed && <span>Download ZIP</span>}
+            <LogOut className="w-4 h-4 shrink-0" />
+            {!collapsed && <span>Sign Out</span>}
           </button>
         </div>
       </aside>
@@ -215,23 +190,6 @@ function WorkspaceShell() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={openPdfDownload}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <FileText className="w-3.5 h-3.5 shrink-0" />
-              <span>Submission PDFs</span>
-            </button>
-            <button
-              type="button"
-              onClick={openZipDownload}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5 shrink-0" />
-              <span>Download ZIP</span>
-            </button>
-
             {/* Real WebSocket Live Feed Indicator */}
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 mr-1">
               <span
@@ -326,26 +284,6 @@ function WorkspaceShell() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      setProfileOpen(false);
-                      openPdfDownload();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                  >
-                    <FileText className="w-3.5 h-3.5" /> Download Submission PDF
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProfileOpen(false);
-                      openZipDownload();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Download PortfolioPro.zip
-                  </button>
-                  <button
-                    type="button"
                     onClick={logout}
                     className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
                   >
@@ -405,7 +343,6 @@ function WorkspaceShell() {
       {/* Global Overlays */}
       <CommandPalette />
       <OrderDrawer />
-      <ProjectDownloadModal open={zipModalOpen} onClose={() => setZipModalOpen(false)} />
 
       {/* Toast Stack with Undo Window for Pending Limit Orders */}
       <div className="fixed bottom-16 md:bottom-5 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">

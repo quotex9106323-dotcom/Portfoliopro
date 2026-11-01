@@ -1,11 +1,7 @@
 import React, { useState } from 'react';
-import { Download, FileText, Sun, Moon, ArrowRight, AlertCircle } from 'lucide-react';
+import { Sun, Moon, ArrowRight, AlertCircle } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { formatINR } from '../services/api';
-import {
-  ProjectDownloadModal,
-  triggerZipBlobDownload,
-} from './ProjectDownloadModal';
 
 export const AuthScreen: React.FC = () => {
   const { login, register, theme, toggleTheme, stocks } = usePortfolio();
@@ -15,16 +11,6 @@ export const AuthScreen: React.FC = () => {
   const [password, setPassword] = useState('Demo@1234');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [zipModalOpen, setZipModalOpen] = useState(false);
-
-  const handlePdfDownloadClick = () => {
-    setZipModalOpen(true);
-  };
-
-  const handleDownloadClick = () => {
-    void triggerZipBlobDownload();
-    setZipModalOpen(true);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,22 +67,6 @@ export const AuthScreen: React.FC = () => {
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={handlePdfDownloadClick}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Submission PDFs</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadClick}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Download ZIP</span>
-          </button>
-          <button
-            type="button"
             onClick={toggleTheme}
             aria-label="Toggle color theme"
             className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
@@ -105,7 +75,6 @@ export const AuthScreen: React.FC = () => {
           </button>
         </div>
       </header>
-      <ProjectDownloadModal open={zipModalOpen} onClose={() => setZipModalOpen(false)} />
 
       {/* Main Split Workspace */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-12 grid lg:grid-cols-12 gap-12 items-center">

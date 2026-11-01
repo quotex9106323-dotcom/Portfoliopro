@@ -17,7 +17,11 @@ import {
   clearAuthTokens,
   getAccessToken,
   getRefreshToken,
+  isBrowserEngineActive,
+  activateBrowserEngine,
+  onBrowserEngineModeChange,
 } from '../services/api';
+import { getBrowserLiveEngine } from '../services/browserLiveEngine';
 
 export interface ToastItem {
   id: string;
@@ -202,177 +206,227 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [user]);
 
-  // Live WebSocket Connection with Auto-Reconnect
+  // Live WebSocket Connection with Seamless Browser Live Engine Fallback (Vercel / Static CDN)
   useEffect(() => {
     let unmounted = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let unsubBrowserStream: (() => void) | null = null;
+    let wsFailures = 0;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const processStreamPacket = (msg: any) => {
+      if (unmounted || !msg) return;
+      if (msg.type === 'MARKET_SNAPSHOT') {
+        if (Array.isArray(msg.indices)) setIndices(msg.indices);
+        if (Array.isArray(msg.stocks)) {
+          const nextMap: Record<string, StockQuote> = {};
+          for (const s of msg.stocks) nextMap[s.symbol] = s as StockQuote;
+          setStocksMap(nextMap);
+        }
+      } else if (msg.type === 'PRICE_TICKS') {
+        if (Array.isArray(msg.indices)) setIndices(msg.indices);
+        if (Array.isArray(msg.ticks)) {
+          const flashes: Record<string, 'UP' | 'DOWN'> = {};
+          setStocksMap((prev) => {
+            const updated = { ...prev };
+            for (const t of msg.ticks) {
+              const existing = updated[t.symbol];
+              if (!existing) continue;
+              if (t.ltp !== existing.ltp && (t.direction === 'UP' || t.direction === 'DOWN')) {
+                flashes[t.symbol] = t.direction;
+              }
+              const nextSpark = [...existing.sparkline];
+              if (nextSpark.length > 0) {
+                nextSpark[nextSpark.length - 1] = t.ltp;
+              }
+              updated[t.symbol] = {
+                ...existing,
+                ltp: t.ltp,
+                change: t.change,
+                changePct: t.changePct,
+                dayHigh: t.dayHigh,
+                dayLow: t.dayLow,
+                volume: t.volume,
+                lastDirection: t.direction,
+                sparkline: nextSpark,
+              };
+            }
+            return updated;
+          });
+
+          const flashKeys = Object.keys(flashes);
+          if (flashKeys.length > 0) {
+            setTickFlash((prev) => ({ ...prev, ...flashes }));
+            for (const sym of flashKeys) {
+              if (flashTimersRef.current[sym]) clearTimeout(flashTimersRef.current[sym]);
+              flashTimersRef.current[sym] = setTimeout(() => {
+                setTickFlash((p) => {
+                  const copy = { ...p };
+                  delete copy[sym];
+                  return copy;
+                });
+              }, 600);
+            }
+          }
+
+          setPortfolio((prev) => {
+            if (!prev || prev.holdings.length === 0) return prev;
+            const tickLookup: Record<string, number> = {};
+            for (const t of msg.ticks) tickLookup[t.symbol] = t.ltp;
+
+            let currentValue = 0;
+            let dayPnl = 0;
+            const nextHoldings = prev.holdings.map((h) => {
+              const ltp = tickLookup[h.symbol] ?? h.ltp;
+              const mktVal = Number((ltp * h.quantity).toFixed(2));
+              const totalPnl = Number((mktVal - h.investedAmount).toFixed(2));
+              const totalPnlPct =
+                h.investedAmount > 0 ? Number(((totalPnl / h.investedAmount) * 100).toFixed(2)) : 0;
+              const itemDayPnl = Number(((ltp - h.prevClose) * h.quantity).toFixed(2));
+              const itemDayPnlPct =
+                h.prevClose > 0 ? Number((((ltp - h.prevClose) / h.prevClose) * 100).toFixed(2)) : 0;
+
+              currentValue += mktVal;
+              dayPnl += itemDayPnl;
+              return {
+                ...h,
+                ltp,
+                currentValue: mktVal,
+                totalPnl,
+                totalPnlPct,
+                dayPnl: itemDayPnl,
+                dayPnlPct: itemDayPnlPct,
+              };
+            });
+
+            currentValue = Number(currentValue.toFixed(2));
+            dayPnl = Number(dayPnl.toFixed(2));
+            const totalPnl = Number((currentValue - prev.totalInvested).toFixed(2));
+            const totalPnlPct =
+              prev.totalInvested > 0 ? Number(((totalPnl / prev.totalInvested) * 100).toFixed(2)) : 0;
+            const prevVal = currentValue - dayPnl;
+            const dayPnlPct = prevVal > 0 ? Number(((dayPnl / prevVal) * 100).toFixed(2)) : 0;
+
+            return {
+              ...prev,
+              currentValue,
+              totalAccountEquity: Number(
+                (currentValue + prev.walletBalance + prev.blockedMargin).toFixed(2)
+              ),
+              totalPnl,
+              totalPnlPct,
+              dayPnl,
+              dayPnlPct,
+              holdings: nextHoldings,
+            };
+          });
+        }
+      } else if (msg.type === 'USER_EVENT') {
+        refreshPortfolioAll();
+        if (msg.eventType === 'ORDER_EXECUTED' && msg.payload) {
+          const o = msg.payload;
+          pushToast({
+            title: `Limit ${o.side} Filled — ${o.symbol}`,
+            message: `${o.quantity} shares executed @ ₹${Number(o.executedPrice).toFixed(2)}`,
+            variant: 'success',
+          });
+        } else if (msg.eventType === 'RISK_TRIGGERED' && msg.payload) {
+          const p = msg.payload;
+          pushToast({
+            title: `${p.trigger === 'STOP_LOSS' ? 'Stop-Loss' : 'Target'} Triggered — ${p.symbol}`,
+            message: `Position exited automatically at market price.`,
+            variant: p.trigger === 'STOP_LOSS' ? 'warning' : 'success',
+          });
+        } else if (msg.eventType === 'ALERT_TRIGGERED' && msg.payload?.notification) {
+          pushToast({
+            title: msg.payload.notification.title,
+            message: msg.payload.notification.message,
+            variant: 'info',
+          });
+        }
+      }
+    };
+
+    const startBrowserStream = () => {
+      if (unmounted || unsubBrowserStream) return;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      unsubBrowserStream = getBrowserLiveEngine().subscribeStream(
+        () => getAccessToken(),
+        processStreamPacket
+      );
+      setWsConnected(true);
+    };
+
+    const unsubMode = onBrowserEngineModeChange((active) => {
+      if (active) startBrowserStream();
+    });
 
     const connect = () => {
       if (unmounted) return;
+      if (isBrowserEngineActive()) {
+        startBrowserStream();
+        return;
+      }
+
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const token = getAccessToken();
       const wsUrl = `${proto}//${window.location.host}/ws${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+      let openedOnce = false;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
+        openedOnce = true;
+        wsFailures = 0;
         if (!unmounted) setWsConnected(true);
       };
 
       ws.onmessage = (evt) => {
         if (unmounted) return;
         try {
-          const msg = JSON.parse(evt.data);
-          if (msg.type === 'MARKET_SNAPSHOT') {
-            if (Array.isArray(msg.indices)) setIndices(msg.indices);
-            if (Array.isArray(msg.stocks)) {
-              const nextMap: Record<string, StockQuote> = {};
-              for (const s of msg.stocks) nextMap[s.symbol] = s;
-              setStocksMap(nextMap);
-            }
-          } else if (msg.type === 'PRICE_TICKS') {
-            if (Array.isArray(msg.indices)) setIndices(msg.indices);
-            if (Array.isArray(msg.ticks)) {
-              const flashes: Record<string, 'UP' | 'DOWN'> = {};
-              setStocksMap((prev) => {
-                const updated = { ...prev };
-                for (const t of msg.ticks) {
-                  const existing = updated[t.symbol];
-                  if (!existing) continue;
-                  if (t.ltp !== existing.ltp && (t.direction === 'UP' || t.direction === 'DOWN')) {
-                    flashes[t.symbol] = t.direction;
-                  }
-                  const nextSpark = [...existing.sparkline];
-                  if (nextSpark.length > 0) {
-                    nextSpark[nextSpark.length - 1] = t.ltp;
-                  }
-                  updated[t.symbol] = {
-                    ...existing,
-                    ltp: t.ltp,
-                    change: t.change,
-                    changePct: t.changePct,
-                    dayHigh: t.dayHigh,
-                    dayLow: t.dayLow,
-                    volume: t.volume,
-                    lastDirection: t.direction,
-                    sparkline: nextSpark,
-                  };
-                }
-                return updated;
-              });
-
-              const flashKeys = Object.keys(flashes);
-              if (flashKeys.length > 0) {
-                setTickFlash((prev) => ({ ...prev, ...flashes }));
-                for (const sym of flashKeys) {
-                  if (flashTimersRef.current[sym]) clearTimeout(flashTimersRef.current[sym]);
-                  flashTimersRef.current[sym] = setTimeout(() => {
-                    setTickFlash((p) => {
-                      const copy = { ...p };
-                      delete copy[sym];
-                      return copy;
-                    });
-                  }, 600);
-                }
-              }
-
-              // Recompute live portfolio P&L smoothly from updated LTPs
-              setPortfolio((prev) => {
-                if (!prev || prev.holdings.length === 0) return prev;
-                const tickLookup: Record<string, number> = {};
-                for (const t of msg.ticks) tickLookup[t.symbol] = t.ltp;
-
-                let currentValue = 0;
-                let dayPnl = 0;
-                const nextHoldings = prev.holdings.map((h) => {
-                  const ltp = tickLookup[h.symbol] ?? h.ltp;
-                  const mktVal = Number((ltp * h.quantity).toFixed(2));
-                  const totalPnl = Number((mktVal - h.investedAmount).toFixed(2));
-                  const totalPnlPct =
-                    h.investedAmount > 0 ? Number(((totalPnl / h.investedAmount) * 100).toFixed(2)) : 0;
-                  const itemDayPnl = Number(((ltp - h.prevClose) * h.quantity).toFixed(2));
-                  const itemDayPnlPct =
-                    h.prevClose > 0 ? Number((((ltp - h.prevClose) / h.prevClose) * 100).toFixed(2)) : 0;
-
-                  currentValue += mktVal;
-                  dayPnl += itemDayPnl;
-                  return {
-                    ...h,
-                    ltp,
-                    currentValue: mktVal,
-                    totalPnl,
-                    totalPnlPct,
-                    dayPnl: itemDayPnl,
-                    dayPnlPct: itemDayPnlPct,
-                  };
-                });
-
-                currentValue = Number(currentValue.toFixed(2));
-                dayPnl = Number(dayPnl.toFixed(2));
-                const totalPnl = Number((currentValue - prev.totalInvested).toFixed(2));
-                const totalPnlPct =
-                  prev.totalInvested > 0
-                    ? Number(((totalPnl / prev.totalInvested) * 100).toFixed(2))
-                    : 0;
-                const prevVal = currentValue - dayPnl;
-                const dayPnlPct = prevVal > 0 ? Number(((dayPnl / prevVal) * 100).toFixed(2)) : 0;
-
-                return {
-                  ...prev,
-                  currentValue,
-                  totalAccountEquity: Number(
-                    (currentValue + prev.walletBalance + prev.blockedMargin).toFixed(2)
-                  ),
-                  totalPnl,
-                  totalPnlPct,
-                  dayPnl,
-                  dayPnlPct,
-                  holdings: nextHoldings,
-                };
-              });
-            }
-          } else if (msg.type === 'USER_EVENT') {
-            refreshPortfolioAll();
-            if (msg.eventType === 'ORDER_EXECUTED' && msg.payload) {
-              const o = msg.payload;
-              pushToast({
-                title: `Limit ${o.side} Filled — ${o.symbol}`,
-                message: `${o.quantity} shares executed @ ₹${Number(o.executedPrice).toFixed(2)}`,
-                variant: 'success',
-              });
-            } else if (msg.eventType === 'RISK_TRIGGERED' && msg.payload) {
-              const p = msg.payload;
-              pushToast({
-                title: `${p.trigger === 'STOP_LOSS' ? 'Stop-Loss' : 'Target'} Triggered — ${p.symbol}`,
-                message: `Position exited automatically at market price.`,
-                variant: p.trigger === 'STOP_LOSS' ? 'warning' : 'success',
-              });
-            } else if (msg.eventType === 'ALERT_TRIGGERED' && msg.payload?.notification) {
-              pushToast({
-                title: msg.payload.notification.title,
-                message: msg.payload.notification.message,
-                variant: 'info',
-              });
-            }
-          }
+          processStreamPacket(JSON.parse(evt.data));
         } catch {
           // Ignore malformed WS message
         }
       };
 
       ws.onclose = () => {
-        if (!unmounted) {
-          setWsConnected(false);
-          reconnectTimer = setTimeout(connect, 2500);
+        if (unmounted) return;
+        if (isBrowserEngineActive()) {
+          startBrowserStream();
+          return;
         }
+        if (!openedOnce) {
+          wsFailures += 1;
+          if (wsFailures >= 2) {
+            activateBrowserEngine();
+            startBrowserStream();
+            return;
+          }
+        }
+        setWsConnected(false);
+        reconnectTimer = setTimeout(connect, 2000);
       };
     };
 
     connect();
     return () => {
       unmounted = true;
+      unsubMode();
+      if (unsubBrowserStream) unsubBrowserStream();
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+      }
     };
   }, [user, refreshPortfolioAll, pushToast]);
 
