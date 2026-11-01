@@ -139,7 +139,7 @@ export async function apiFetch<T>(url: string, options: RequestInit = {}): Promi
     res.status === 502 ||
     res.status === 503 ||
     res.status === 504 ||
-    (res.status === 404 && url.startsWith('/api/market/stocks'));
+    (res.status === 404 && url.startsWith('/api/'));
 
   if (isMissingServerlessBackend) {
     activateBrowserEngine();
