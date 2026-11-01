@@ -1,0 +1,6 @@
+{
+  "name": "PortfolioPro",
+  "description": "Stock trading and portfolio management platform with live NSE market feeds, candlestick technical indicators, fundamental analysis, and automated risk controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

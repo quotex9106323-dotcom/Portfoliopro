@@ -1,0 +1,5 @@
+package com.portfoliopro.entity.enums;
+
+public enum OrderType {
+    MARKET, LIMIT
+}
