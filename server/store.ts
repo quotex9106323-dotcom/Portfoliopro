@@ -204,6 +204,19 @@ export class PortfolioStore {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw) as PersistedDb;
         if (parsed && Array.isArray(parsed.users) && parsed.users.length > 0) {
+          let migrated = false;
+          for (const u of parsed.users) {
+            if (
+              (u.id === 'usr_demo_001' || u.email === 'demo@portfoliopro.in') &&
+              u.fullName === 'Aarav Mehta'
+            ) {
+              u.fullName = 'Manish Singh';
+              migrated = true;
+            }
+          }
+          if (migrated) {
+            this.persistImmediate(parsed);
+          }
           return parsed;
         }
       }
@@ -224,7 +237,7 @@ export class PortfolioStore {
 
     const demoUser: UserRecord = {
       id: demoUserId,
-      fullName: 'Aarav Mehta',
+      fullName: 'Manish Singh',
       email: 'demo@portfoliopro.in',
       passwordHash,
       theme: 'dark',

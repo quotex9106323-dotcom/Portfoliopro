@@ -256,6 +256,19 @@ class BrowserLiveTradingEngine {
       if (raw) {
         const parsed = JSON.parse(raw) as BrowserPersistedDb;
         if (parsed && parsed.version === 1 && Array.isArray(parsed.users) && parsed.users.length > 0) {
+          let migrated = false;
+          for (const u of parsed.users) {
+            if (
+              (u.id === 'usr_demo_001' || u.email === 'demo@portfoliopro.in') &&
+              u.fullName === 'Aarav Mehta'
+            ) {
+              u.fullName = 'Manish Singh';
+              migrated = true;
+            }
+          }
+          if (migrated) {
+            this.persistImmediate(parsed);
+          }
           return parsed;
         }
       }
@@ -274,7 +287,7 @@ class BrowserLiveTradingEngine {
 
     const demoUser: BrowserUserRecord = {
       id: demoUserId,
-      fullName: 'Aarav Mehta',
+      fullName: 'Manish Singh',
       email: 'demo@portfoliopro.in',
       passwordDigest: digestPassword('Demo@1234'),
       theme: 'dark',
